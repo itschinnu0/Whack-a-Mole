@@ -5,6 +5,7 @@ int greenLED = A1;
 
 int moleCount = 6;
 int score = 0;
+int missCount = 0;
 bool gameRunning = false; // The game starts "OFF"
 
 void setup() {
@@ -23,9 +24,9 @@ void loop() {
   // Check for commands from the PC
   if (Serial.available() > 0) {
     char cmd = Serial.read();
-    if (cmd == 'S') { gameRunning = true; Serial.println("LOG:Game Started"); }
+    if (cmd == 'S') { missCount = 0; gameRunning = true; Serial.println("LOG:Game Started"); }
     if (cmd == 'X') { gameRunning = false; Serial.println("LOG:Game Stopped"); allLedsOff(); }
-    if (cmd == 'R') { score = 0; Serial.println("H:0"); Serial.println("LOG:Score Reset"); }
+    if (cmd == 'R') { score = 0; missCount = 0; Serial.println("H:0"); Serial.println("LOG:Score Reset"); }
   }
 
   if (gameRunning) {
@@ -41,10 +42,14 @@ void runGameLogic() {
   digitalWrite(ledPins[mole], HIGH);
   unsigned long startTime = millis();
   bool hit = false;
+  unsigned long moleWindow = getMoleWindow(score);
 
-  while (millis() - startTime < 1000) {
+  while (millis() - startTime < moleWindow) {
     // Check for stop command even during the mole window
-    if (Serial.available() > 0 && Serial.peek() == 'X') return; 
+    if (Serial.available() > 0 && Serial.peek() == 'X') {
+      digitalWrite(ledPins[mole], LOW);
+      return;
+    }
 
     if (digitalRead(buttonPins[mole]) == LOW) {
       hit = true;
@@ -62,12 +67,45 @@ void runGameLogic() {
     delay(150);
     digitalWrite(greenLED, LOW);
   } else {
+    missCount++;
     Serial.println("M");
     digitalWrite(redLED, HIGH);
     delay(150);
     digitalWrite(redLED, LOW);
+
+    if (missCount >= 5) {
+      gameRunning = false;
+      Serial.println("LOG:Game Over - 5 misses reached");
+      allLedsOff();
+      return;
+    }
   }
   delay(300);
+}
+
+unsigned long getMoleWindow(int hits) {
+  if (hits < 5) {
+    return 2000UL;
+  }
+
+  if (hits < 10) {
+    return 1750UL;
+  }
+
+  if (hits < 25) {
+    return 1500UL;
+  }
+
+  if (hits < 40) {
+    return 1000UL;
+  }
+
+  unsigned long extraSteps = (unsigned long)((hits - 40) / 10);
+  unsigned long window = 1000UL - (extraSteps * 100UL);
+  if (window < 400UL) {
+    window = 400UL;
+  }
+  return window;
 }
 
 void allLedsOff() {

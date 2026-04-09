@@ -1790,26 +1790,24 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Vighnajit CHM\\.nuget\\packages\\": {}
+    "/home/codespace/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Vighnajit CHM\\source\\repos\\WaM\\WaM\\WaM.csproj",
+      "projectUniqueName": "/workspaces/Whack-a-Mole/WaM/WaM.csproj",
       "projectName": "WaM",
-      "projectPath": "C:\\Users\\Vighnajit CHM\\source\\repos\\WaM\\WaM\\WaM.csproj",
-      "packagesPath": "C:\\Users\\Vighnajit CHM\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Vighnajit CHM\\source\\repos\\WaM\\WaM\\obj\\",
+      "projectPath": "/workspaces/Whack-a-Mole/WaM/WaM.csproj",
+      "packagesPath": "/home/codespace/.nuget/packages/",
+      "outputPath": "/workspaces/Whack-a-Mole/WaM/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Vighnajit CHM\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "/home/codespace/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -1828,7 +1826,7 @@
         "auditLevel": "low",
         "auditMode": "all"
       },
-      "SdkAnalysisLevel": "10.0.200"
+      "SdkAnalysisLevel": "10.0.100"
     },
     "frameworks": {
       "net10.0": {
@@ -1859,7 +1857,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.100/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",

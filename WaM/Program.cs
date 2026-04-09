@@ -18,9 +18,9 @@ var selectedPort = AnsiConsole.Prompt(
 
 using SerialPort sp = new SerialPort(selectedPort, 9600);
 int score = 0;
+int misses = 0;
 int activeMole = -1;
 string status = "System Ready. Press 'S' to Start!";
-bool isRunning = false;
 
 // --- BACKGROUND SERIAL LISTENER ---
 sp.DataReceived += (s, e) => {
@@ -29,8 +29,24 @@ sp.DataReceived += (s, e) => {
         string data = sp.ReadLine().Trim();
         if (data.StartsWith("P:")) activeMole = int.Parse(data.Split(':')[1]);
         else if (data.StartsWith("H:")) { score = int.Parse(data.Split(':')[1]); status = "[green]HIT![/]"; activeMole = -1; }
-        else if (data == "M") { status = "[red]MISS![/]"; activeMole = -1; }
-        else if (data.StartsWith("LOG:")) status = $"[blue]{data.Substring(4)}[/]";
+        else if (data == "M") { misses++; status = $"[red]MISS![/]"; activeMole = -1; }
+        else if (data.StartsWith("LOG:"))
+        {
+            var message = data.Substring(4);
+            status = $"[blue]{message}[/]";
+            if (message.StartsWith("Game Over"))
+            {
+                activeMole = -1;
+            }
+            if (message == "Game Started")
+            {
+                misses = 0;
+            }
+            if (message == "Score Reset")
+            {
+                misses = 0;
+            }
+        }
     }
     catch { }
 };
@@ -46,29 +62,24 @@ await AnsiConsole.Live(new Rule())
             if (Console.KeyAvailable)
             {
                 var key = Console.ReadKey(true).Key;
-                if (key == ConsoleKey.S) { sp.Write("S"); isRunning = true; }
-                if (key == ConsoleKey.X) { sp.Write("X"); isRunning = false; activeMole = -1; }
-                if (key == ConsoleKey.R) { sp.Write("R"); }
+                if (key == ConsoleKey.S) { sp.Write("S"); misses = 0; }
+                if (key == ConsoleKey.X) { sp.Write("X"); activeMole = -1; }
+                if (key == ConsoleKey.R) { sp.Write("R"); score = 0; misses = 0; }
                 if (key == ConsoleKey.Escape) break;
             }
 
             // 2. Build the UI
             var grid = new Grid().AddColumns(3);
-            for (int i = 0; i < 6; i++)
-            {
-                bool active = (activeMole == i);
-                grid.AddRow(CreateMolePanel(0, activeMole), CreateMolePanel(1, activeMole), CreateMolePanel(2, activeMole));
-                grid.AddEmptyRow();
-                grid.AddRow(CreateMolePanel(3, activeMole), CreateMolePanel(4, activeMole), CreateMolePanel(5, activeMole));
-                break; // break because we add all rows at once
-            }
+            grid.AddRow(CreateMolePanel(0, activeMole), CreateMolePanel(1, activeMole), CreateMolePanel(2, activeMole));
+            grid.AddEmptyRow();
+            grid.AddRow(CreateMolePanel(3, activeMole), CreateMolePanel(4, activeMole), CreateMolePanel(5, activeMole));
 
             var layout = new Table().BorderColor(Color.Blue).Expand()
                 .Title($"[bold yellow]PORT: {selectedPort}[/] | [bold cyan]WHACK-A-MOLE[/]")
                 .AddColumn(new TableColumn(grid).Centered())
                 .AddRow(new Columns(
                     new Panel($"[bold]SCORE:[/] [green]{score}[/]").Expand(),
-                    new Panel($"[bold]STATUS:[/] {status}").Expand()
+                    new Panel($"[bold]STATUS:[/] {status}\n[bold]MISSES:[/] [red]{misses}/5[/]").Expand()
                 ))
                 .AddRow(new Panel("[bold white]CONTROLS:[/] [yellow](S)[/] Start  [red](X)[/] Stop  [blue](R)[/] Reset  [grey](Esc)[/] Exit"));
 
