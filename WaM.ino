@@ -26,7 +26,7 @@ void loop() {
     char cmd = Serial.read();
     if (cmd == 'S') { missCount = 0; gameRunning = true; Serial.println("LOG:Game Started"); }
     if (cmd == 'X') { gameRunning = false; Serial.println("LOG:Game Stopped"); allLedsOff(); }
-    if (cmd == 'R') { score = 0; missCount = 0; Serial.println("H:0"); Serial.println("LOG:Score Reset"); }
+    if (cmd == 'R') { score = 0; missCount = 0; Serial.println("LOG:Score Reset"); }
   }
 
   if (gameRunning) {
