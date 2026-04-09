@@ -21,6 +21,8 @@ int score = 0;
 int misses = 0;
 int level = 1;
 int activeMole = -1;
+bool gameOver = false;
+bool stopCommandSent = false;
 string status = "System Ready. Press 'S' to Start!";
 
 // --- BACKGROUND SERIAL LISTENER ---
@@ -30,13 +32,25 @@ sp.DataReceived += (s, e) => {
         string data = sp.ReadLine().Trim();
         if (data.StartsWith("P:")) activeMole = int.Parse(data.Split(':')[1]);
         else if (data.StartsWith("H:")) { score = int.Parse(data.Split(':')[1]); misses = 0; level = GetLevel(score); status = "[green]HIT![/]"; activeMole = -1; }
-        else if (data == "M") { misses++; status = $"[red]MISS![/]"; activeMole = -1; }
+        else if (data == "M")
+        {
+            misses++;
+            status = "[red]MISS![/]";
+            activeMole = -1;
+
+            if (misses >= 5)
+            {
+                gameOver = true;
+                status = "[red]GAME OVER - 5 MISSES![/]";
+            }
+        }
         else if (data.StartsWith("LOG:"))
         {
             var message = data.Substring(4);
             status = $"[blue]{message}[/]";
             if (message.StartsWith("Game Over"))
             {
+                gameOver = true;
                 activeMole = -1;
             }
             if (message == "Game Started")
@@ -44,12 +58,16 @@ sp.DataReceived += (s, e) => {
                 score = 0;
                 misses = 0;
                 level = 1;
+                gameOver = false;
+                stopCommandSent = false;
             }
             if (message == "Score Reset")
             {
                 score = 0;
                 misses = 0;
                 level = 1;
+                gameOver = false;
+                stopCommandSent = false;
             }
             if (message.StartsWith("Level "))
             {
@@ -67,13 +85,19 @@ await AnsiConsole.Live(new Rule())
     .StartAsync(async ctx => {
         while (true)
         {
+            if (gameOver && !stopCommandSent)
+            {
+                sp.Write("X");
+                stopCommandSent = true;
+            }
+
             // 1. Handle Keyboard Inputs
             if (Console.KeyAvailable)
             {
                 var key = Console.ReadKey(true).Key;
-                if (key == ConsoleKey.S) { sp.Write("S"); score = 0; misses = 0; level = 1; }
-                if (key == ConsoleKey.X) { sp.Write("X"); activeMole = -1; }
-                if (key == ConsoleKey.R) { sp.Write("R"); score = 0; misses = 0; level = 1; }
+                if (key == ConsoleKey.S) { sp.Write("S"); score = 0; misses = 0; level = 1; gameOver = false; stopCommandSent = false; }
+                if (key == ConsoleKey.X) { sp.Write("X"); activeMole = -1; gameOver = true; stopCommandSent = true; }
+                if (key == ConsoleKey.R) { sp.Write("R"); score = 0; misses = 0; level = 1; gameOver = false; stopCommandSent = false; }
                 if (key == ConsoleKey.Escape) break;
             }
 
