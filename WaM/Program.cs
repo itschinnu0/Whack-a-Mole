@@ -19,6 +19,7 @@ var selectedPort = AnsiConsole.Prompt(
 using SerialPort sp = new SerialPort(selectedPort, 9600);
 int score = 0;
 int misses = 0;
+int level = 1;
 int activeMole = -1;
 string status = "System Ready. Press 'S' to Start!";
 
@@ -28,7 +29,7 @@ sp.DataReceived += (s, e) => {
     {
         string data = sp.ReadLine().Trim();
         if (data.StartsWith("P:")) activeMole = int.Parse(data.Split(':')[1]);
-        else if (data.StartsWith("H:")) { score = int.Parse(data.Split(':')[1]); status = "[green]HIT![/]"; activeMole = -1; }
+        else if (data.StartsWith("H:")) { score = int.Parse(data.Split(':')[1]); misses = 0; level = GetLevel(score); status = "[green]HIT![/]"; activeMole = -1; }
         else if (data == "M") { misses++; status = $"[red]MISS![/]"; activeMole = -1; }
         else if (data.StartsWith("LOG:"))
         {
@@ -40,11 +41,19 @@ sp.DataReceived += (s, e) => {
             }
             if (message == "Game Started")
             {
+                score = 0;
                 misses = 0;
+                level = 1;
             }
             if (message == "Score Reset")
             {
+                score = 0;
                 misses = 0;
+                level = 1;
+            }
+            if (message.StartsWith("Level "))
+            {
+                level = int.Parse(message.Split(' ')[1]);
             }
         }
     }
@@ -62,9 +71,9 @@ await AnsiConsole.Live(new Rule())
             if (Console.KeyAvailable)
             {
                 var key = Console.ReadKey(true).Key;
-                if (key == ConsoleKey.S) { sp.Write("S"); misses = 0; }
+                if (key == ConsoleKey.S) { sp.Write("S"); score = 0; misses = 0; level = 1; }
                 if (key == ConsoleKey.X) { sp.Write("X"); activeMole = -1; }
-                if (key == ConsoleKey.R) { sp.Write("R"); score = 0; misses = 0; }
+                if (key == ConsoleKey.R) { sp.Write("R"); score = 0; misses = 0; level = 1; }
                 if (key == ConsoleKey.Escape) break;
             }
 
@@ -79,7 +88,7 @@ await AnsiConsole.Live(new Rule())
                 .AddColumn(new TableColumn(grid).Centered())
                 .AddRow(new Columns(
                     new Panel($"[bold]SCORE:[/] [green]{score}[/]").Expand(),
-                    new Panel($"[bold]STATUS:[/] {status}\n[bold]MISSES:[/] [red]{misses}/5[/]").Expand()
+                    new Panel($"[bold]STATUS:[/] {status}\n[bold]LEVEL:[/] [yellow]{level}[/]\n[bold]MISSES:[/] [red]{misses}/5[/]").Expand()
                 ))
                 .AddRow(new Panel("[bold white]CONTROLS:[/] [yellow](S)[/] Start  [red](X)[/] Stop  [blue](R)[/] Reset  [grey](Esc)[/] Exit"));
 
@@ -93,4 +102,19 @@ Panel CreateMolePanel(int id, int active)
     bool isUp = (active == id);
     return new Panel(isUp ? "[bold yellow] (O_O) \n  UP!  [/]" : "[grey] ( - ) \n       [/]")
         .Header($"Hole {id + 1}").BorderColor(isUp ? Color.Yellow : Color.Grey);
+}
+
+int GetLevel(int hits)
+{
+    if (hits >= 20)
+    {
+        return 3;
+    }
+
+    if (hits >= 5)
+    {
+        return 2;
+    }
+
+    return 1;
 }

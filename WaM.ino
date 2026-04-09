@@ -6,6 +6,7 @@ int greenLED = A1;
 int moleCount = 6;
 int score = 0;
 int missCount = 0;
+int currentLevel = 1;
 bool gameRunning = false; // The game starts "OFF"
 
 void setup() {
@@ -24,9 +25,9 @@ void loop() {
   // Check for commands from the PC
   if (Serial.available() > 0) {
     char cmd = Serial.read();
-    if (cmd == 'S') { missCount = 0; gameRunning = true; Serial.println("LOG:Game Started"); }
+    if (cmd == 'S') { score = 0; missCount = 0; currentLevel = 1; gameRunning = true; Serial.println("LOG:Game Started"); Serial.println("LOG:Level 1"); }
     if (cmd == 'X') { gameRunning = false; Serial.println("LOG:Game Stopped"); allLedsOff(); }
-    if (cmd == 'R') { score = 0; missCount = 0; Serial.println("LOG:Score Reset"); }
+    if (cmd == 'R') { score = 0; missCount = 0; currentLevel = 1; Serial.println("LOG:Score Reset"); Serial.println("LOG:Level 1"); }
   }
 
   if (gameRunning) {
@@ -61,6 +62,8 @@ void runGameLogic() {
 
   if (hit) {
     score++;
+    missCount = 0;
+    updateLevel();
     Serial.print("H:");
     Serial.println(score);
     digitalWrite(greenLED, HIGH);
@@ -88,24 +91,27 @@ unsigned long getMoleWindow(int hits) {
     return 2000UL;
   }
 
-  if (hits < 10) {
-    return 1750UL;
+  if (hits < 20) {
+    return 1200UL;
   }
 
-  if (hits < 25) {
-    return 1500UL;
+  return 900UL;
+}
+
+void updateLevel() {
+  int newLevel = 1;
+
+  if (score >= 20) {
+    newLevel = 3;
+  } else if (score >= 5) {
+    newLevel = 2;
   }
 
-  if (hits < 40) {
-    return 1000UL;
+  if (newLevel != currentLevel) {
+    currentLevel = newLevel;
+    Serial.print("LOG:Level ");
+    Serial.println(currentLevel);
   }
-
-  unsigned long extraSteps = (unsigned long)((hits - 40) / 10);
-  unsigned long window = 1000UL - (extraSteps * 100UL);
-  if (window < 400UL) {
-    window = 400UL;
-  }
-  return window;
 }
 
 void allLedsOff() {
