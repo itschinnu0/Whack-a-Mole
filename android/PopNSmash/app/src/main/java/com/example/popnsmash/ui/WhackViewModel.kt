@@ -45,9 +45,17 @@ class WhackViewModel : ViewModel() {
             level = 1,
             activeMoleIndex = -1,
             isGameOver = false,
-            hitsCount = 0,
-            statusMessage = "Ready!"
+            logs = listOf("SYSTEM REBOOTED", "INITIALIZING...", "READY")
         )
+    }
+
+    private fun addLog(message: String) {
+        val currentLogs = state.logs.toMutableList()
+        currentLogs.add(message.uppercase())
+        if (currentLogs.size > 5) { // Keep a few more just in case
+            currentLogs.removeAt(0)
+        }
+        state = state.copy(logs = currentLogs)
     }
 
     fun handleSerialData(data: String) {
@@ -58,49 +66,37 @@ class WhackViewModel : ViewModel() {
             trimmedData.startsWith("P:") -> {
                 val index = trimmedData.substringAfter("P:").toIntOrNull() ?: -1
                 state = state.copy(activeMoleIndex = index)
+//                if (index != -1) addLog("TARGET ACQUIRED: HOLE $index")
+                
+                // Note: 'Safety' timer would typically be handled by a LaunchedEffect 
+                // in the Composable watching activeMoleIndex change, or here via viewModelScope.
             }
             trimmedData.startsWith("H:") -> {
-                val scoreValue = trimmedData.substringAfter("H:").toIntOrNull() ?: state.score
-                val newHitsCount = state.hitsCount + 1
-                val newLevel = when {
-                    newHitsCount < 5 -> 1
-                    newHitsCount < 20 -> 2
-                    else -> 3
-                }
+                val scoreValue = trimmedData.substringAfter("H:").toIntOrNull() ?: (state.score + 1)
                 state = state.copy(
                     score = scoreValue,
-                    misses = 0,
-                    hitsCount = newHitsCount,
-                    level = newLevel,
-                    statusMessage = "HIT!",
                     activeMoleIndex = -1
                 )
+                addLog("CRITICAL HIT! SCORE: $scoreValue")
             }
             trimmedData == "M" -> {
                 val newMisses = state.misses + 1
+                state = state.copy(
+                    misses = newMisses,
+                    isGameOver = newMisses >= 5,
+                    activeMoleIndex = if (newMisses >= 5) -1 else state.activeMoleIndex
+                )
                 if (newMisses >= 5) {
-                    state = state.copy(
-                        misses = newMisses,
-                        isGameOver = true,
-                        statusMessage = "GAME OVER",
-                        activeMoleIndex = -1
-                    )
+                    addLog("SYSTEM FAILURE: GAME OVER")
                 } else {
-                    state = state.copy(
-                        misses = newMisses,
-                        statusMessage = "MISS!"
-                    )
+                    addLog("THREAT ESCAPED - MISS ($newMisses/5)")
                 }
             }
             trimmedData.startsWith("LOG:") -> {
                 val message = trimmedData.substringAfter("LOG:")
-                state = state.copy(statusMessage = message)
+                addLog(message)
                 
-                // Handle sub-messages to reset local state if needed
-                if (message.contains("Game Started", ignoreCase = true) || 
-                    message.contains("Score Reset", ignoreCase = true)) {
-                    resetLocalStats()
-                } else if (message.contains("Level", ignoreCase = true)) {
+                if (message.contains("Level", ignoreCase = true)) {
                     val levelNum = message.filter { it.isDigit() }.toIntOrNull()
                     if (levelNum != null) {
                         state = state.copy(level = levelNum)

@@ -1,5 +1,8 @@
 package com.example.popnsmash.ui
 
+/**
+ * Refined state for the ultra-minimal dashboard.
+ */
 data class WhackGameState(
     val score: Int = 0,
     val misses: Int = 0,
@@ -7,6 +10,5 @@ data class WhackGameState(
     val activeMoleIndex: Int = -1,
     val isConnected: Boolean = false,
     val isGameOver: Boolean = false,
-    val statusMessage: String = "Plug in Arduino to Start",
-    val hitsCount: Int = 0
+    val logs: List<String> = listOf("SYSTEM READY")
 )
