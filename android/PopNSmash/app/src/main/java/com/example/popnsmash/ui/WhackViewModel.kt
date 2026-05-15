@@ -26,7 +26,7 @@ class WhackViewModel : ViewModel() {
 
     fun stopGame() {
         writeSerialData("X")
-        state = state.copy(isGameOver = true)
+        state = state.copy(isGameOver = true, statusMessage = "STOPPED")
     }
 
     fun resetGame() {
@@ -45,6 +45,8 @@ class WhackViewModel : ViewModel() {
             level = 1,
             activeMoleIndex = -1,
             isGameOver = false,
+            isCountingDown = false,
+            statusMessage = "READY",
             logs = listOf("SYSTEM REBOOTED", "INITIALIZING...", "READY")
         )
     }
@@ -66,10 +68,7 @@ class WhackViewModel : ViewModel() {
             trimmedData.startsWith("P:") -> {
                 val index = trimmedData.substringAfter("P:").toIntOrNull() ?: -1
                 state = state.copy(activeMoleIndex = index)
-//                if (index != -1) addLog("TARGET ACQUIRED: HOLE $index")
-                
-                // Note: 'Safety' timer would typically be handled by a LaunchedEffect 
-                // in the Composable watching activeMoleIndex change, or here via viewModelScope.
+                if (index != -1) addLog("TARGET ACQUIRED: HOLE $index")
             }
             trimmedData.startsWith("H:") -> {
                 val scoreValue = trimmedData.substringAfter("H:").toIntOrNull() ?: (state.score + 1)
@@ -79,27 +78,47 @@ class WhackViewModel : ViewModel() {
                 )
                 addLog("CRITICAL HIT! SCORE: $scoreValue")
             }
-            trimmedData == "M" -> {
-                val newMisses = state.misses + 1
+            trimmedData.startsWith("M:") -> {
+                val totalMisses = trimmedData.substringAfter("M:").toIntOrNull() ?: state.misses
                 state = state.copy(
-                    misses = newMisses,
-                    isGameOver = newMisses >= 5,
-                    activeMoleIndex = if (newMisses >= 5) -1 else state.activeMoleIndex
+                    misses = totalMisses,
+                    isGameOver = totalMisses >= 10,
+                    activeMoleIndex = if (totalMisses >= 10) -1 else state.activeMoleIndex
                 )
-                if (newMisses >= 5) {
+                if (totalMisses >= 10) {
                     addLog("SYSTEM FAILURE: GAME OVER")
                 } else {
-                    addLog("THREAT ESCAPED - MISS ($newMisses/5)")
+                    addLog("THREAT ESCAPED - LIVES: ${10 - totalMisses}/10")
                 }
             }
             trimmedData.startsWith("LOG:") -> {
                 val message = trimmedData.substringAfter("LOG:")
                 addLog(message)
                 
-                if (message.contains("Level", ignoreCase = true)) {
-                    val levelNum = message.filter { it.isDigit() }.toIntOrNull()
-                    if (levelNum != null) {
-                        state = state.copy(level = levelNum)
+                when {
+                    message.contains("Level", ignoreCase = true) -> {
+                        val levelNum = message.filter { it.isDigit() }.toIntOrNull()
+                        if (levelNum != null) {
+                            state = state.copy(level = levelNum)
+                        }
+                    }
+                    message == "Get Ready..." -> {
+                        state = state.copy(
+                            isCountingDown = true,
+                            statusMessage = "GET READY!",
+                            isGameOver = false,
+                            score = 0,
+                            misses = 0
+                        )
+                    }
+                    message == "Game Started" -> {
+                        state = state.copy(isCountingDown = false, statusMessage = "SMASH!", isGameOver = false)
+                    }
+                    message == "Resetting..." -> {
+                        state = state.copy(statusMessage = "RESETTING...", activeMoleIndex = -1)
+                    }
+                    message == "Game Over" -> {
+                        state = state.copy(isGameOver = true, statusMessage = "GAME OVER", activeMoleIndex = -1)
                     }
                 }
             }

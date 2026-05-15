@@ -205,6 +205,7 @@ fun WhackAMoleDashboard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 24.dp, vertical = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -247,6 +248,7 @@ fun WhackAMoleDashboard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(24.dp)
                     .height(56.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -278,52 +280,120 @@ fun WhackAMoleDashboard(
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Hero Stats
+        Box(modifier = Modifier.fillMaxSize()) {
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "${state.score}",
-                    color = Color.White,
-                    fontSize = 100.sp,
-                    fontWeight = FontWeight.Thin,
-                    modifier = Modifier.scale(scoreScale.value)
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = if (state.activeMoleIndex == -1) "SCANNING..." else "ACTIVE HOLE: ${state.activeMoleIndex}",
-                    color = if (state.activeMoleIndex == -1) Color.Gray else Color(0xFF00E5FF),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Miss Tracker
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Hero Stats
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    repeat(5) { index ->
-                        val isMissed = index < state.misses
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(if (isMissed) Color(0xFFF44336) else Color(0xFF212121))
+                    if (state.isCountingDown) {
+                        Text(
+                            text = state.statusMessage,
+                            color = NeonCyan,
+                            fontSize = 48.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.neonGlow(NeonCyan, 1f)
                         )
+                    } else {
+                        Text(
+                            text = "${state.score}",
+                            color = Color.White,
+                            fontSize = 100.sp,
+                            fontWeight = FontWeight.Thin,
+                            modifier = Modifier.scale(scoreScale.value)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = if (state.activeMoleIndex == -1) {
+                                if (state.isGameOver) "GAME OVER" else "SCANNING..."
+                            } else "ACTIVE HOLE: ${state.activeMoleIndex}",
+                            color = if (state.activeMoleIndex == -1) {
+                                if (state.isGameOver) MissRed else Color.Gray
+                            } else Color(0xFF00E5FF),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Miss Tracker (Lives Remaining)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "LIVES: ${10 - state.misses}",
+                                color = if (state.misses > 7) MissRed else Color.Gray,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                repeat(10) { index ->
+                                    val isMissed = index < state.misses
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isMissed) Color(0xFFF44336) else Color(0xFF212121))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Bottom Logs
+                ScrollingLog(logs = state.logs)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Game Over Overlay
+            if (state.isGameOver) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "MISSION FAILED",
+                            color = MissRed,
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.neonGlow(MissRed, 1f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "FINAL SCORE: ${state.score}",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Light
+                        )
+                        Spacer(modifier = Modifier.height(48.dp))
+                        Button(
+                            onClick = onReset,
+                            colors = ButtonDefaults.buttonColors(containerColor = MissRed),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(56.dp)
+                                .width(220.dp)
+                        ) {
+                            Text("RETRY SYSTEM", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
