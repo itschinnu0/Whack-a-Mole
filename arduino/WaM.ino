@@ -1,168 +1,201 @@
-int buttonPins[] = { 8, 9, 10, 11, 12, 13 };
-int ledPins[] = { 2, 3, 4, 5, 6, 7 };
-int redLED = A0;
-int greenLED = A1;
+/*
+ * Whack-a-Mole: Production Edition
+ * Optimized for Android USB-OTG Communication
+ */
 
-int moleCount = 6;
+// --- CONFIGURATION ---
+const int BUTTON_PINS[] = {8, 9, 10, 11, 12, 13};
+const int LED_PINS[]    = {2, 3, 4, 5, 6, 7};
+const int RED_LED       = A0;
+const int GREEN_LED     = A1;
+const int MOLE_COUNT    = 6;
+
+// --- GAME CONSTANTS ---
+const int RARE_MOLE_INDEX = 5; 
+const int RARE_MOLE_CHANCE = 1; // 1%
+const unsigned long RARE_WINDOW = 250;
+
+// --- STATE VARIABLES ---
 int score = 0;
 int missCount = 0;
 int currentLevel = 1;
-bool gameRunning = false; // The game starts "OFF"
-const int rareMoleIndex = 5; // 0-based index of the damaged button mole
-const int rareMoleChancePercent = 1; // 1% chance to allow this mole
-const unsigned long rareMoleWindowMs = 250UL; // Very short even at level 1
-unsigned long gameStartMs = 0;
-unsigned long lastLevelCheckMs = 0;
+bool gameRunning = false;
+int activeMole = -1;
 int totalMolesShown = 0;
 
+unsigned long moleStartTime = 0;
+unsigned long moleWindow = 0;
+unsigned long lastLevelCheckMs = 0;
+unsigned long feedbackEndTime = 0;
+
 void setup() {
-  Serial.begin(9600);
-  for (int i = 0; i < moleCount; i++) {
-    pinMode(ledPins[i], OUTPUT);
-    pinMode(buttonPins[i], INPUT_PULLUP);
-    digitalWrite(ledPins[i], LOW);
+  Serial.begin(9600); // Keep at 9600 to match your C# legacy or move to 115200 for speed
+  
+  for (int i = 0; i < MOLE_COUNT; i++) {
+    pinMode(LED_PINS[i], OUTPUT);
+    pinMode(BUTTON_PINS[i], INPUT_PULLUP);
+    digitalWrite(LED_PINS[i], LOW);
   }
-  pinMode(redLED, OUTPUT);
-  pinMode(greenLED, OUTPUT);
-  randomSeed(analogRead(0));
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+  
+  randomSeed(analogRead(3)); // Use an unconnected analog pin for better randomness
+  Serial.println("LOG:System Ready");
 }
 
 void loop() {
-  // Check for commands from the PC
-  if (Serial.available() > 0) {
-    char cmd = Serial.read();
-    if (cmd == 'S') { score = 0; missCount = 0; currentLevel = 1; totalMolesShown = 0; gameRunning = true; gameStartMs = millis(); lastLevelCheckMs = gameStartMs; Serial.println("LOG:Game Started"); Serial.println("LOG:Level 1"); }
-    if (cmd == 'X') { gameRunning = false; Serial.println("LOG:Game Stopped"); allLedsOff(); }
-    if (cmd == 'R') { score = 0; missCount = 0; currentLevel = 1; totalMolesShown = 0; gameStartMs = millis(); lastLevelCheckMs = gameStartMs; Serial.println("LOG:Score Reset"); Serial.println("LOG:Level 1"); }
-  }
+  checkSerialCommands();
 
   if (gameRunning) {
-    runGameLogic();
+    manageGameState();
+    checkPhysicalInput();
+  }
+  
+  handleFeedbackTimers();
+}
+
+// --- CORE LOGIC ---
+
+void checkSerialCommands() {
+  if (Serial.available() > 0) {
+    char cmd = Serial.read();
+    switch (cmd) {
+      case 'S': startNewGame(); break;
+      case 'X': stopGame(); break;
+      case 'R': resetStats(); break;
+    }
   }
 }
 
-void runGameLogic() {
-  int mole = chooseMole();
-  totalMolesShown++;
-  Serial.print("P:"); 
-  Serial.println(mole);
-
-  digitalWrite(ledPins[mole], HIGH);
-  unsigned long startTime = millis();
-  bool hit = false;
-  unsigned long moleWindow = getMoleWindowForMole(score, mole);
-
-  while (millis() - startTime < moleWindow) {
-    // Check for stop command even during the mole window
-    if (Serial.available() > 0 && Serial.peek() == 'X') {
-      digitalWrite(ledPins[mole], LOW);
-      return;
-    }
-
-    if (digitalRead(buttonPins[mole]) == LOW) {
-      hit = true;
-      break;
+void manageGameState() {
+  // If no mole is active, pick one
+  if (activeMole == -1) {
+    spawnMole();
+  } else {
+    // Check if mole timed out (Miss)
+    if (millis() - moleStartTime >= moleWindow) {
+      handleResult(false);
     }
   }
+  
+  updateLevelLogic();
+}
 
-  digitalWrite(ledPins[mole], LOW);
+void checkPhysicalInput() {
+  if (activeMole != -1) {
+    if (digitalRead(BUTTON_PINS[activeMole]) == LOW) {
+      handleResult(true);
+    }
+  }
+}
 
+void spawnMole() {
+  activeMole = chooseMole();
+  totalMolesShown++;
+  moleStartTime = millis();
+  moleWindow = getMoleWindowForMole(score, activeMole);
+  
+  digitalWrite(LED_PINS[activeMole], HIGH);
+  Serial.print("P:");
+  Serial.println(activeMole);
+}
+
+void handleResult(bool hit) {
+  // Turn off the mole LED immediately
+  if (activeMole != -1) digitalWrite(LED_PINS[activeMole], LOW);
+  
   if (hit) {
     score++;
     missCount = 0;
-    updateLevel();
     Serial.print("H:");
     Serial.println(score);
-    digitalWrite(greenLED, HIGH);
-    delay(150);
-    digitalWrite(greenLED, LOW);
+    triggerFeedback(GREEN_LED);
   } else {
     missCount++;
     Serial.println("M");
-    digitalWrite(redLED, HIGH);
-    delay(150);
-    digitalWrite(redLED, LOW);
-
+    triggerFeedback(RED_LED);
+    
     if (missCount >= 5) {
-      gameRunning = false;
-      Serial.println("LOG:Game Over - 5 misses reached");
-      allLedsOff();
+      Serial.println("LOG:Game Over - 5 misses");
+      stopGame();
       return;
     }
   }
-  delay(300);
+  
+  activeMole = -1; // Reset for next spawn
+  moleStartTime = millis() + 300; // Small delay before next mole (non-blocking)
 }
 
-unsigned long getMoleWindow(int hits) {
-  if (hits < 5) {
-    return 2000UL;
-  }
+// --- HELPERS ---
 
-  if (hits < 20) {
-    return 1200UL;
+int chooseMole() {
+  int mole = random(MOLE_COUNT);
+  if (mole == RARE_MOLE_INDEX && random(100) >= RARE_MOLE_CHANCE) {
+    mole = (mole + 1) % MOLE_COUNT;
   }
+  return mole;
+}
 
+unsigned long getMoleWindowForMole(int hits, int mole) {
+  if (mole == RARE_MOLE_INDEX) return RARE_WINDOW;
+  if (hits < 5) return 2000UL;
+  if (hits < 20) return 1200UL;
   return 900UL;
 }
 
-void updateLevel() {
-  const unsigned long checkIntervalMs = 15000UL;
-  const int minMolesForCheck = 10;
-  const int maxLevel = 5;
-  const float minAccuracyForLevelUp = 0.75f;
-  const float minAccuracyToHold = 0.55f;
+void triggerFeedback(int pin) {
+  digitalWrite(pin, HIGH);
+  feedbackEndTime = millis() + 150;
+}
 
+void handleFeedbackTimers() {
+  if (millis() >= feedbackEndTime) {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, LOW);
+  }
+}
+
+void startNewGame() {
+  resetStats();
+  gameRunning = true;
+  Serial.println("LOG:Game Started");
+}
+
+void stopGame() {
+  gameRunning = false;
+  activeMole = -1;
+  allLedsOff();
+  Serial.println("LOG:Game Stopped");
+}
+
+void resetStats() {
+  score = 0;
+  missCount = 0;
+  currentLevel = 1;
+  totalMolesShown = 0;
+  lastLevelCheckMs = millis();
+}
+
+void allLedsOff() {
+  for (int i = 0; i < MOLE_COUNT; i++) digitalWrite(LED_PINS[i], LOW);
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+}
+
+void updateLevelLogic() {
   unsigned long now = millis();
-  if (now - lastLevelCheckMs < checkIntervalMs) {
-    return;
-  }
+  if (now - lastLevelCheckMs < 15000UL || totalMolesShown < 10) return;
 
-  lastLevelCheckMs = now;
-
-  if (totalMolesShown < minMolesForCheck) {
-    return;
-  }
-
-  float accuracy = 0.0f;
-  if (totalMolesShown > 0) {
-    accuracy = (float)score / (float)totalMolesShown;
-  }
-
+  float accuracy = (float)score / (float)totalMolesShown;
   int newLevel = currentLevel;
-  if (accuracy >= minAccuracyForLevelUp && currentLevel < maxLevel) {
-    newLevel = currentLevel + 1;
-  } else if (accuracy < minAccuracyToHold && currentLevel > 1) {
-    newLevel = currentLevel - 1;
-  }
+
+  if (accuracy >= 0.75f && currentLevel < 5) newLevel++;
+  else if (accuracy < 0.55f && currentLevel > 1) newLevel--;
 
   if (newLevel != currentLevel) {
     currentLevel = newLevel;
     Serial.print("LOG:Level ");
     Serial.println(currentLevel);
   }
-}
-
-void allLedsOff() {
-  for (int i = 0; i < moleCount; i++) digitalWrite(ledPins[i], LOW);
-  digitalWrite(redLED, LOW);
-  digitalWrite(greenLED, LOW);
-}
-
-int chooseMole() {
-  int mole = random(moleCount);
-  if (mole == rareMoleIndex) {
-    int roll = random(100);
-    if (roll >= rareMoleChancePercent) {
-      // Pick a different mole if the rare one is not allowed.
-      mole = (mole + 1) % moleCount;
-    }
-  }
-  return mole;
-}
-
-unsigned long getMoleWindowForMole(int hits, int mole) {
-  if (mole == rareMoleIndex) {
-    return rareMoleWindowMs;
-  }
-  return getMoleWindow(hits);
+  lastLevelCheckMs = now;
 }
