@@ -1,24 +1,21 @@
-/* * Whack-a-Mole: PURE LEGENDARY EDITION
- * No warm-ups. No mercy. 
+/* * Whack-a-Mole: FINAL PRODUCTION BUILD
+ * Optimized: Hit-Priority, 50ms Mercy Buffer, Life-Based (10 Lives), Max 2 Moles.
+ * Stability: Non-blocking state machine, no String overhead, optimized I/O.
  */
 
-// --- CONFIGURATION ---
+// --- HARDWARE CONFIGURATION ---
 const int BUTTON_PINS[] = {8, 9, 10, 11, 12, 13}; 
-const int LED_PINS[]    = {2, 3, 4, 5, 6, 7};     
-const int RED_LED       = A0;                     
-const int GREEN_LED     = A1;                     
-const int MOLE_COUNT    = 6;                      
+const int LED_PINS[]    = {2, 3, 4, 5, 6, 7}; // Blue Mole LEDs
+const int RED_LED       = A0; 
+const int GREEN_LED     = A1; 
+const int MOLE_COUNT    = 6;
 
-// --- YOUR PROTECTED CONSTANTS ---
-const int RARE_MOLE_INDEX = 5; 
-const int RARE_MOLE_CHANCE = 1; 
+// --- GAME CONSTANTS ---
+const int RARE_MOLE_INDEX = 3; 
+const int RARE_MOLE_CHANCE = 1;      // 1% chance
 const unsigned long RARE_WINDOW = 250; 
-
-// --- LEGENDARY TUNING ---
-const int MAX_ACTIVE_MOLES = 2; // Chaos enabled immediately
-const int MISS_LIMIT = 5;
-const unsigned long BASE_WINDOW = 650; // Fast from the start
-const unsigned long MIN_WINDOW = 400;  // Absolute floor for normal moles
+const int LIFE_LIMIT = 10;           // Total lives per game
+const unsigned long MERCY_BUFFER = 50; // Extra ms after LED off to count hit
 
 // --- GAME STATE ---
 struct Mole {
@@ -28,46 +25,67 @@ struct Mole {
 };
 
 Mole moles[MOLE_COUNT];
+bool lastButtonState[MOLE_COUNT];
+unsigned long lastResultTime = 0; 
 int score = 0;
-int missCount = 0;
+int totalMisses = 0; 
+int currentLevel = 1;
 bool gameRunning = false;
-unsigned long lastSpawnTime = 0;
+
+// --- TIMING & SEQUENCES ---
 unsigned long feedbackEndTime = 0;
-unsigned long spawnDelay = 400; 
+unsigned long sequenceEndTime = 0;
+unsigned long lastBlinkToggle = 0;
+unsigned long lastSpawnTime = 0;
+int sequenceType = 0; // 0:None, 1:GameOver, 2:Stop, 3:Reset, 4:Countdown
+bool blinkState = false;
 
 void setup() {
-  Serial.begin(9600); // Stable baud rate for Android [cite: 76]
+  Serial.begin(9600); 
   for (int i = 0; i < MOLE_COUNT; i++) {
     pinMode(LED_PINS[i], OUTPUT);
     pinMode(BUTTON_PINS[i], INPUT_PULLUP);
     digitalWrite(LED_PINS[i], LOW);
+    lastButtonState[i] = HIGH; 
   }
   pinMode(RED_LED, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
-  randomSeed(analogRead(3)); 
+  randomSeed(analogRead(3)); // Use floating pin for true randomness
 }
 
 void loop() {
-  checkSerial();
+  checkSerialCommands();
 
   if (gameRunning) {
     manageSpawning();
+    // CRITICAL: Input checked BEFORE Timeouts for Hit-Priority
     checkInputs();
     checkTimeouts();
+  } else if (sequenceType != 0) {
+    handleSequences(); 
   }
   
-  handleFeedbackTimers();
+  handleFeedbackTimers(); 
 }
 
-// --- CORE ENGINE ---
+// --- CORE GAME ENGINE ---
 
 void manageSpawning() {
   unsigned long now = millis();
-  int currentActive = 0;
-  for(int i=0; i<MOLE_COUNT; i++) if(moles[i].active) currentActive++;
+  
+  // Breather period between mole interactions
+  unsigned long breather = (currentLevel < 3) ? 400 : 300;
+  if (now - lastResultTime < breather) return; 
 
-  // Legendary Mode: Can have 2 moles active at once from Level 1
-  if (currentActive < MAX_ACTIVE_MOLES && (now - lastSpawnTime >= spawnDelay)) {
+  // Max 2 moles active simultaneously (Level 3+)
+  int maxActive = (currentLevel >= 3) ? 2 : 1;
+  int currentActive = 0;
+  for(int i = 0; i < MOLE_COUNT; i++) if(moles[i].active) currentActive++;
+
+  // Spawn timing scales with level
+  unsigned long spawnInterval = max(300UL, 1000UL - (currentLevel * 70));
+  
+  if (currentActive < maxActive && (now - lastSpawnTime >= spawnInterval)) {
     spawnMole();
     lastSpawnTime = now;
   }
@@ -75,8 +93,8 @@ void manageSpawning() {
 
 void spawnMole() {
   int index = random(MOLE_COUNT);
-
-  // Apply Rare Mole Logic [cite: 35, 36, 37]
+  
+  // Rare Mole logic
   if (index == RARE_MOLE_INDEX && random(100) >= RARE_MOLE_CHANCE) {
     index = (index + 1) % MOLE_COUNT; 
   }
@@ -85,38 +103,57 @@ void spawnMole() {
     moles[index].active = true;
     moles[index].startTime = millis();
     
-    // Determine Window: Rare vs Legendary Normal
-    moles[index].window = (index == RARE_MOLE_INDEX) ? RARE_WINDOW : calculateHardWindow();
+    // Window scales from 1.5s down to 500ms
+    unsigned long normalWindow;
+    if (currentLevel < 3) {
+      normalWindow = 1500 - (currentLevel * 250);
+    } else {
+      normalWindow = max(500UL, 1100UL - (currentLevel * 100));
+    }
+    
+    moles[index].window = (index == RARE_MOLE_INDEX) ? RARE_WINDOW : normalWindow;
     
     digitalWrite(LED_PINS[index], HIGH);
-    Serial.print("P:"); 
-    Serial.println(index); 
+    Serial.print(F("P:")); Serial.println(index);
   }
 }
 
 void checkInputs() {
+  unsigned long now = millis();
   for (int i = 0; i < MOLE_COUNT; i++) {
-    if (digitalRead(BUTTON_PINS[i]) == LOW) {
+    bool currentState = digitalRead(BUTTON_PINS[i]);
+
+    // Detect Falling Edge (Button Press)
+    if (currentState == LOW && lastButtonState[i] == HIGH) {
+      // 150ms Grace Period to prevent accidental double-hits/noise
+      if (now - lastResultTime < 150) { 
+          lastButtonState[i] = currentState;
+          continue; 
+      }
+
       if (moles[i].active) {
         handleResult(true, i);
       } else {
-        // FALSE-HIT PENALTY 
-        handleResult(false, -1); 
-        delay(50); // Small debounce
+        handleResult(false, -1); // False hit
       }
     }
+    lastButtonState[i] = currentState; 
   }
 }
 
 void checkTimeouts() {
+  unsigned long now = millis();
   for (int i = 0; i < MOLE_COUNT; i++) {
-    if (moles[i].active && (millis() - moles[i].startTime >= moles[i].window)) {
+    // Mercy Buffer (+50ms) applied to timeout check
+    if (moles[i].active && (now - moles[i].startTime >= (moles[i].window + MERCY_BUFFER))) {
       handleResult(false, i); 
     }
   }
 }
 
 void handleResult(bool hit, int index) {
+  lastResultTime = millis(); 
+
   if (index != -1) {
     moles[index].active = false;
     digitalWrite(LED_PINS[index], LOW);
@@ -124,67 +161,115 @@ void handleResult(bool hit, int index) {
 
   if (hit) {
     score++;
-    missCount = 0;
-    triggerFeedback(GREEN_LED);
-    Serial.print("H:");
-    Serial.println(score);
-    // Increase spawn speed slightly per hit
-    spawnDelay = max(200UL, 400UL - (score * 4));
+    triggerFeedback(GREEN_LED); 
+    Serial.print(F("H:")); Serial.println(score);
+    
+    int newLevel = (score / 10) + 1;
+    if (newLevel != currentLevel) {
+      currentLevel = newLevel;
+      Serial.print(F("LOG:Level ")); Serial.println(currentLevel);
+    }
   } else {
-    missCount++;
-    triggerFeedback(RED_LED);
-    Serial.println("M");
-    if (missCount >= MISS_LIMIT) stopGame("Game Over");
+    totalMisses++;
+    triggerFeedback(RED_LED); 
+    Serial.print(F("M:")); Serial.println(totalMisses); 
+    
+    if (totalMisses >= LIFE_LIMIT) startSequence(1); 
   }
 }
 
-// --- HELPERS ---
+// --- SEQUENCES (VISUALS) ---
 
-unsigned long calculateHardWindow() {
-  // Legendary scaling: Starts fast, gets faster
-  unsigned long current = BASE_WINDOW - (score * 5);
-  return max(current, MIN_WINDOW);
-}
-
-void checkSerial() {
-  if (Serial.available() > 0) {
-    char cmd = Serial.read();
-    if (cmd == 'S' || cmd == 'R') startGame();
-    if (cmd == 'X') stopGame("Stopped");
-  }
-}
-
-void startGame() {
-  score = 0;
-  missCount = 0;
-  spawnDelay = 400;
-  gameRunning = true;
-  for(int i=0; i<MOLE_COUNT; i++) moles[i].active = false;
-  allLedsOff();
-  Serial.println("LOG:Legendary Mode Started");
-}
-
-void stopGame(String reason) {
+void startSequence(int type) {
   gameRunning = false;
   allLedsOff();
-  Serial.print("LOG:");
-  Serial.println(reason);
+  sequenceType = type;
+  lastBlinkToggle = millis();
+  
+  if (type == 1) {
+    sequenceEndTime = millis() + 5000;
+    Serial.println(F("LOG:Game Over"));
+  } 
+  else if (type == 2) sequenceEndTime = millis() + 1000; // Stop
+  else if (type == 3) sequenceEndTime = millis() + 600;  // Reset
+  else if (type == 4) sequenceEndTime = millis() + 3100; // Countdown
+}
+
+void handleSequences() {
+  unsigned long now = millis();
+  if (now > sequenceEndTime) {
+    bool wasCountdown = (sequenceType == 4);
+    sequenceType = 0;
+    allLedsOff();
+    if (wasCountdown) startGameDirect();
+    return;
+  }
+
+  if (sequenceType == 1) { // Red Blink
+    if (now - lastBlinkToggle >= 250) {
+      lastBlinkToggle = now; blinkState = !blinkState;
+      digitalWrite(RED_LED, blinkState);
+    }
+  } 
+  else if (sequenceType == 2) { // Stop R+G
+    if (now - lastBlinkToggle >= 200) {
+      lastBlinkToggle = now; blinkState = !blinkState;
+      digitalWrite(RED_LED, blinkState); digitalWrite(GREEN_LED, blinkState);
+    }
+  }
+  else if (sequenceType == 3) { // Reset Blue x2
+    if (now - lastBlinkToggle >= 150) {
+      lastBlinkToggle = now; blinkState = !blinkState;
+      for(int i = 0; i < MOLE_COUNT; i++) digitalWrite(LED_PINS[i], blinkState);
+    }
+  }
+  else if (sequenceType == 4) { // 3-2-1 Countdown
+    unsigned long remaining = sequenceEndTime - now;
+    allLedsOff();
+    if (remaining > 2000) { digitalWrite(LED_PINS[0], HIGH); digitalWrite(LED_PINS[1], HIGH); }
+    else if (remaining > 1000) { digitalWrite(LED_PINS[2], HIGH); digitalWrite(LED_PINS[3], HIGH); }
+    else if (remaining > 100) { digitalWrite(LED_PINS[4], HIGH); digitalWrite(LED_PINS[5], HIGH); }
+  }
+}
+
+// --- SYSTEM ---
+
+void checkSerialCommands() {
+  if (Serial.available() > 0) {
+    char cmd = Serial.read();
+    if (cmd == 'S') startSequence(4);
+    if (cmd == 'X') startSequence(2); 
+    if (cmd == 'R') startSequence(3);
+  }
+}
+
+void startGameDirect() {
+  score = 0; 
+  totalMisses = 0; 
+  currentLevel = 1; 
+  gameRunning = true;
+  lastResultTime = millis();
+  for (int i = 0; i < MOLE_COUNT; i++) {
+    lastButtonState[i] = digitalRead(BUTTON_PINS[i]);
+    moles[i].active = false;
+  }
+  allLedsOff();
+  Serial.println(F("LOG:Game Started"));
 }
 
 void triggerFeedback(int pin) {
+  digitalWrite(GREEN_LED, LOW); digitalWrite(RED_LED, LOW); 
   digitalWrite(pin, HIGH);
-  feedbackEndTime = millis() + 100;
+  feedbackEndTime = millis() + 150; 
 }
 
 void handleFeedbackTimers() {
-  if (millis() >= feedbackEndTime) {
-    digitalWrite(GREEN_LED, LOW);
-    digitalWrite(RED_LED, LOW);
+  if (millis() >= feedbackEndTime && sequenceType == 0) {
+    digitalWrite(GREEN_LED, LOW); digitalWrite(RED_LED, LOW);
   }
 }
 
 void allLedsOff() {
   for (int i = 0; i < MOLE_COUNT; i++) digitalWrite(LED_PINS[i], LOW);
-  digitalWrite(RED_LED, LOW);
-  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(RED_LED, LOW); digitalWrite(GREEN_LED, LOW);
 }
