@@ -155,29 +155,6 @@ fun CyberMissTracker(misses: Int) {
 }
 
 @Composable
-fun ScrollingLog(logs: List<String>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(90.dp)
-            .background(Color.Black.copy(alpha = 0.4f))
-            .border(1.dp, NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        logs.takeLast(3).forEach { log ->
-            Text(
-                text = "> $log",
-                color = NeonCyan.copy(alpha = 0.8f),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-@Composable
 fun WhackAMoleDashboard(
     state: WhackGameState,
     onStart: () -> Unit,
@@ -315,7 +292,7 @@ fun WhackAMoleDashboard(
 
                         Text(
                             text = if (state.activeMoleIndex == -1) {
-                                if (state.isGameOver) "GAME OVER" else "SCANNING..."
+                                if (state.isGameOver) "GAME OVER" else ""
                             } else "ACTIVE HOLE: ${state.activeMoleIndex}",
                             color = if (state.activeMoleIndex == -1) {
                                 if (state.isGameOver) MissRed else Color.Gray
@@ -354,10 +331,6 @@ fun WhackAMoleDashboard(
                         }
                     }
                 }
-
-                // Bottom Logs
-                ScrollingLog(logs = state.logs)
-                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // Game Over Overlay
@@ -370,7 +343,7 @@ fun WhackAMoleDashboard(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "MISSION FAILED",
+                            text = "MISSION FAILED!",
                             color = MissRed,
                             fontSize = 40.sp,
                             fontWeight = FontWeight.Black,
@@ -392,7 +365,7 @@ fun WhackAMoleDashboard(
                                 .height(56.dp)
                                 .width(220.dp)
                         ) {
-                            Text("RETRY SYSTEM", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("PLAY AGAIN!", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -11,6 +11,5 @@ data class WhackGameState(
     val isConnected: Boolean = false,
     val isGameOver: Boolean = false,
     val isCountingDown: Boolean = false,
-    val statusMessage: String = "READY",
-    val logs: List<String> = listOf("SYSTEM READY")
+    val statusMessage: String = "READY"
 )

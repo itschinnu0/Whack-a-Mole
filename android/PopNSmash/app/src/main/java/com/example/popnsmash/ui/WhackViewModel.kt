@@ -46,18 +46,8 @@ class WhackViewModel : ViewModel() {
             activeMoleIndex = -1,
             isGameOver = false,
             isCountingDown = false,
-            statusMessage = "READY",
-            logs = listOf("SYSTEM REBOOTED", "INITIALIZING...", "READY")
+            statusMessage = "READY"
         )
-    }
-
-    private fun addLog(message: String) {
-        val currentLogs = state.logs.toMutableList()
-        currentLogs.add(message.uppercase())
-        if (currentLogs.size > 5) { // Keep a few more just in case
-            currentLogs.removeAt(0)
-        }
-        state = state.copy(logs = currentLogs)
     }
 
     fun handleSerialData(data: String) {
@@ -68,7 +58,6 @@ class WhackViewModel : ViewModel() {
             trimmedData.startsWith("P:") -> {
                 val index = trimmedData.substringAfter("P:").toIntOrNull() ?: -1
                 state = state.copy(activeMoleIndex = index)
-                if (index != -1) addLog("TARGET ACQUIRED: HOLE $index")
             }
             trimmedData.startsWith("H:") -> {
                 val scoreValue = trimmedData.substringAfter("H:").toIntOrNull() ?: (state.score + 1)
@@ -76,7 +65,6 @@ class WhackViewModel : ViewModel() {
                     score = scoreValue,
                     activeMoleIndex = -1
                 )
-                addLog("CRITICAL HIT! SCORE: $scoreValue")
             }
             trimmedData.startsWith("M:") -> {
                 val totalMisses = trimmedData.substringAfter("M:").toIntOrNull() ?: state.misses
@@ -85,15 +73,9 @@ class WhackViewModel : ViewModel() {
                     isGameOver = totalMisses >= 10,
                     activeMoleIndex = if (totalMisses >= 10) -1 else state.activeMoleIndex
                 )
-                if (totalMisses >= 10) {
-                    addLog("SYSTEM FAILURE: GAME OVER")
-                } else {
-                    addLog("THREAT ESCAPED - LIVES: ${10 - totalMisses}/10")
-                }
             }
             trimmedData.startsWith("LOG:") -> {
                 val message = trimmedData.substringAfter("LOG:")
-                addLog(message)
                 
                 when {
                     message.contains("Level", ignoreCase = true) -> {
